@@ -22,6 +22,27 @@ public class ReproducerTest {
 
     @Test
     public void reproduce() {
+        final MyEntity entity = new MyEntity()
+                .setName("test")
+                .setNickname("nick")
+                .setValue(42);
+
+        datastore.save(entity);
+
+        final MyEntity retrieved = datastore.find(MyEntity.class)
+                .filter(dev.morphia.query.filters.Filters.eq("name", "test"))
+                .first();
+
+        assert entity.equals(retrieved);
+        assert entity.getNickname().equals("nick");
+
+        // This fails because the nickname is not encoded when querying by it
+        // Same issue with update, findAndModify, findAndUpdate etc.
+        final MyEntity retrievedBuNickname = datastore.find(MyEntity.class)
+                .filter(dev.morphia.query.filters.Filters.eq("nickname", "nick"))
+                .first();
+        assert entity.equals(retrievedBuNickname);
+        assert entity.getNickname().equals("nick");
     }
 
     @NotNull
