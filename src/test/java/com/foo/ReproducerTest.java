@@ -3,8 +3,12 @@ package com.foo;
 import com.mongodb.ConnectionString;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.client.model.ReturnDocument;
 import dev.morphia.Datastore;
+import dev.morphia.ModifyOptions;
 import dev.morphia.Morphia;
+import dev.morphia.query.FindOptions;
+import org.bson.Document;
 import org.bson.UuidRepresentation;
 import org.jetbrains.annotations.NotNull;
 import org.testcontainers.containers.MongoDBContainer;
@@ -45,6 +49,31 @@ public class ReproducerTest {
         assert entity.getNickname().equals("nick");
     }
 
+    // findAndModify fails - it saves but does not encode nickname so it fails in PRELOAD when attempting to return the entity
+    // And it does not create a discriminator
+    @Test
+    public void findAndModifyCreatesDiscriminator() {
+        final MyEntity entity = new MyEntity()
+                .setName("test2")
+                .setNickname("nick2")
+                .setValue(84);
+
+
+        final MyEntity modified = datastore.find(MyEntity.class, new FindOptions())
+                .filter(dev.morphia.query.filters.Filters.eq("name", "test2"))
+                .modify(new ModifyOptions().returnDocument(ReturnDocument.AFTER).upsert(true),
+                        dev.morphia.query.updates.UpdateOperators.set("name", entity.getName()),
+                        dev.morphia.query.updates.UpdateOperators.set("nickname", entity.getNickname()),
+                        dev.morphia.query.updates.UpdateOperators.set("value", entity.getValue()));
+
+        assert modified.getValue() == 100;
+
+        // never gets here because of the POSTLOAD error. For now, check database for discriminator
+        final Document retrievedByNickname = datastore.getDatabase().getCollection(MyEntity.class.getSimpleName()).find(new Document(
+                "name", "test2")).first();
+        assert retrievedByNickname.get("_t").equals(MyEntity.class.getSimpleName());
+    }
+
     @NotNull
     public String databaseName() {
         return "morphia_repro";
@@ -60,6 +89,7 @@ public class ReproducerTest {
         mongoDBContainer = new MongoDBContainer(dockerImageName());
         mongoDBContainer.start();
         connectionString = mongoDBContainer.getReplicaSetUrl(databaseName());
+        System.out.println("MongoDB Connection String: " + connectionString);
 
         MongoClient mongoClient = MongoClients.create(builder()
                                                   .uuidRepresentation(UuidRepresentation.STANDARD)
